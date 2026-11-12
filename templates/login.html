@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Data Annotation Platform - Login</title>
+</head>
+<body>
+    <h2>Login</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Enter Platform</button>
+    </form>
+
+    <hr>
+
+    <a href="{% url 'admin:index' %}"><button type="button">Django Admin</button></a>
+</body>
+</html>

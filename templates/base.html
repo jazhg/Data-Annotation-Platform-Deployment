@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Evaluation</title>
+</head>
+<body>
+    {% if user.is_authenticated %}
+    <nav>
+        <form action="{% url 'logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit">Logout</button>
+        </form>
+    </nav>
+    <hr>
+    {% endif %}
+    <div>
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

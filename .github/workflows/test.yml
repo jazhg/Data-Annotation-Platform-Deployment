@@ -1,0 +1,31 @@
+name: Django checks
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: annotation_platform
+          POSTGRES_USER: annotation_user
+          POSTGRES_PASSWORD: ci-database-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U annotation_user -d annotation_platform"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_PASSWORD: ci-database-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - run: uv run manage.py test
+      - run: uv run manage.py makemigrations --check --dry-run
+      - run: uv run manage.py check --deploy --settings=config.settings
+        env:
+          DJANGO_DEBUG: "0"
+          DJANGO_SECRET_KEY: ci-only-placeholder-not-a-deployment-secret-0123456789abcdef
+          DJANGO_ALLOWED_HOSTS: example.test

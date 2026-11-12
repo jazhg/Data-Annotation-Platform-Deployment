@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    .rating-options { display: grid; gap: 6px; max-width: 850px; margin: 12px 0; }
+    .rating-option { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; cursor: pointer; }
+    .rating-option:hover { background: #f6f6f6; }
+    .rating-option:has(input:checked) { background: #edf4fc; border-color: #4176aa; }
+    .rating-option:focus-within { outline: 2px solid #4176aa; outline-offset: 2px; }
+    .rating-option input { margin: 0; flex-shrink: 0; }
+    .rating-option strong { display: inline-block; min-width: 2em; }
+</style>
+<header>
+    <h2>Example {{ position }} / {{ total }}</h2>
+    <p>{{ example.category }} · {{ example.step }} · ID {{ example.example_id }} · Completed {{ completed }}/{{ total }}</p>
+</header>
+
+<form method="post">
+    {% csrf_token %}
+    {% for section in sections %}
+    <section style="margin: 2rem 0; padding: 1rem; border: 1px solid #aaa;">
+        <h3>{{ section.title }}</h3>
+        {% if section.eval_type == 'sequence' %}<p><strong>Narrative:</strong> {{ example.sequence.narrative_description }}</p>{% endif %}
+        <div style="display: flex; flex-wrap: wrap; gap: 1rem;">
+            {% for image in section.images %}
+            <article style="max-width: 420px;">
+                <h4>Image {{ image.image_id }}</h4>
+                <img src="{% url 'study_image' image.web_path %}" alt="Study image {{ image.image_id }}" style="max-width: 100%; max-height: 380px;">
+                <p><strong>Description:</strong> {{ image.description }}</p>
+                {% if section.eval_type == 't2i' %}
+                <details><summary>Caption</summary><p>{{ image.caption }}</p></details>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+        {% for rating in section.rating_rows %}
+        <fieldset style="margin-top: 1rem;">
+            <legend><strong>{{ rating.name }}</strong></legend>
+            <p>{{ rating.description }}</p>
+            <div class="rating-options">
+                {% for value, label in rating.choices %}
+                <label class="rating-option">
+                    <input type="radio" name="{{ rating.field_name }}" value="{{ value }}" {% if rating.current == value|stringformat:'s' %}checked{% endif %}>
+                    <span><strong>{{ value|capfirst }}</strong> {{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+        {% endfor %}
+    </section>
+    {% endfor %}
+
+    {% if has_previous %}<button type="submit" name="navigate" value="previous">Previous</button>{% endif %}
+    <button type="submit" name="navigate" value="stay">Save</button>
+    {% if has_next %}<button type="submit" name="navigate" value="next">Save and next</button>{% endif %}
+</form>
+{% endblock %}

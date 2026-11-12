@@ -1,0 +1,31 @@
+# Paid Starter service: supports pre-deploy migrations and an interactive Shell.
+services:
+  - type: web
+    name: image-annotation
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    preDeployCommand: /app/.venv/bin/python manage.py migrate --noinput --settings=config.settings
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_TRUST_PROXY
+        value: "1"
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        value: postgres
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_SSLMODE
+        value: require
+      - key: SUPABASE_PRIVATE_SCHEMA
+        value: "1"
