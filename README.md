@@ -128,18 +128,49 @@ Choose a new username and strong password. Visit https://YOUR-SERVICE.onrender.c
 log in, and add a strong access code under Access codes. Do not use tempadmin123
 or access code 123; those local development credentials are not migrated.
 
-Share the root URL with annotators. They supply their study username and access code.
+Share the root URL with annotators. They select **Create an account**, then supply
+their email, a password (with confirmation), and an active access code. Returning
+participants log in with email and password. Emails are case-insensitive; the
+shared access code is required only for registration. Disabling a code stops new
+registrations; disable a user in Django Admin to revoke that user's access.
+
+Run `manage.py migrate` before deploying this authentication change. Existing
+username-only accounts and their ratings remain intact, but can no longer log in
+with a shared code. Do not automatically assign these accounts to someone based
+on a claimed username. After independently verifying ownership, an administrator
+can set the existing user's email and password and create an `EmailAccount` record
+linked to that user with the lowercase email through the Django shell. This keeps
+the existing user ID and ratings. New registrations receive an opaque internal
+username, which remains the identifier in CSV exports. Researcher admin login is
+unchanged. Email ownership verification at registration is not included.
+
+### Password recovery and CSV deletion
+
+The login page's **Forgot password?** link sends a single-use recovery link valid
+for one hour. Only active registered email accounts with usable passwords receive
+it; the confirmation page is the same for unknown emails. Local DEBUG mode prints
+the email and reset link in the server terminal. Production requires `EMAIL_HOST`,
+`EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL`.
+Use `EMAIL_USE_TLS=1` for STARTTLS (normally port 587), or `EMAIL_USE_TLS=0` and
+`EMAIL_USE_SSL=1` for implicit TLS (normally port 465). Apply ingress rate limits
+to password-reset requests as well as login and registration. Administrators can
+also set a user's password from Django Admin's Users page after verifying ownership.
+
+In Django Admin, **Annotator result CSVs** supports individual deletion and the
+**Delete selected** bulk action for superusers or staff with the CSV delete
+permission. Deletion removes only the stored CSV snapshot, preserving the user
+and ratings. A later rating save or edit regenerates the CSV. To remove underlying
+responses, delete the relevant **Evaluation ratings** as well.
 
 ## 5. Verify before collecting real responses
 
 - Sign in as a test annotator and verify the study images load.
-- Save a few scores, log out, return with the same username, and verify they remain.
+- Save a few scores, log out, return with the same email and password, and verify they remain.
 - Log in as the researcher and download both that CSV and the all-CSVs ZIP.
 - Redeploy and verify those saved ratings remain in Supabase.
 - Configure database backups in Supabase and test a restore into a separate project.
 - Configure ingress login rate limiting before opening the service broadly.
-  Shared access-code login does not establish individual identity: a participant
-  knowing someone else's username can resume it.
+  Apply the same rate limiting to registration.
 
 Do not run manage.py test against the production Supabase database. CI uses an
 isolated PostgreSQL service.

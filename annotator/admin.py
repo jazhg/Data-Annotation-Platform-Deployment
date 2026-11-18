@@ -86,11 +86,7 @@ class AnnotatorResultCSVAdmin(admin.ModelAdmin):
     list_display = ('annotator', 'row_count', 'updated_at', 'download_link')
     readonly_fields = ('annotator', 'row_count', 'updated_at', 'download_link')
     fields = ('annotator', 'row_count', 'updated_at', 'download_link')
-    search_fields = ('annotator__username',)
-
-    def has_delete_permission(self, request, obj=None):
-        """Keep generated exports available; manage source ratings instead."""
-        return False
+    search_fields = ('annotator__username', 'annotator__email')
 
     def has_add_permission(self, request):
         """Disallow manual creation of generated CSV snapshots."""

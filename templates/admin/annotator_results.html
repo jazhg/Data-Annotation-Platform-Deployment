@@ -1,4 +1,8 @@
 {% extends "admin/change_list.html" %}
+{% block content %}
+<p>Deleting a CSV removes its saved export only. Ratings remain and the CSV is regenerated when ratings are next saved or edited. To remove responses, delete their evaluation ratings.</p>
+{{ block.super }}
+{% endblock %}
 {% block object-tools-items %}
 <li><a href="{% url 'admin:annotator_annotatorresultcsv_download_all' %}">Download all CSVs as ZIP</a></li>
 {{ block.super }}

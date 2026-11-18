@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Annotation Dashboard</h2>
-<p>Welcome, <strong>{{ user.username }}</strong>.</p>
+<p>Welcome, <strong>{{ user.email|default:user.username }}</strong>.</p>
 <p>{{ completed }} of {{ total }} examples complete.</p>
 <a href="{% url 'evaluation' start_index %}">{% if completed %}Continue evaluation{% else %}Begin evaluation{% endif %}</a>
 {% endblock %}

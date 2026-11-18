@@ -117,16 +117,18 @@ class AnnotationWorkflowTests(TestCase):
         """Create isolated researcher and access-code fixtures for workflow tests."""
         self.code = AccessCode.objects.create(code='study-code')
         self.owner = User.objects.create_superuser('researcher', password='secret')
-    def test_login_requires_valid_access_code(self):
-        """Verify login requires valid access code."""
-        response = self.client.post(reverse('login'), {
-            'username': 'annotator-1', 'access_code': 'wrong'
+    def test_registration_requires_valid_access_code(self):
+        """Verify only registration uses the shared code."""
+        response = self.client.post(reverse('register'), {
+            'email': 'participant@example.com', 'password': 'Study-Strong-Password-719!',
+            'password_confirm': 'Study-Strong-Password-719!', 'access_code': 'wrong'
         })
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username='annotator-1').exists())
 
-        response = self.client.post(reverse('login'), {
-            'username': 'annotator-1', 'access_code': self.code.code
+        response = self.client.post(reverse('register'), {
+            'email': 'participant@example.com', 'password': 'Study-Strong-Password-719!',
+            'password_confirm': 'Study-Strong-Password-719!', 'access_code': self.code.code
         })
         self.assertRedirects(response, reverse('dashboard'))
 
@@ -179,3 +181,178 @@ class AnnotationWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
         self.assertIn('csv-rater_ratings.csv', response['Content-Disposition'])
+
+
+class EmailAuthenticationTests(TestCase):
+    password = 'Study-Strong-Password-719!'
+
+    def setUp(self):
+        self.code = AccessCode.objects.create(code='invite')
+        self.payload = {'email': 'Rater@Example.com', 'password': self.password,
+                        'password_confirm': self.password, 'access_code': 'invite'}
+
+    def register(self):
+        response = self.client.post(reverse('register'), self.payload)
+        self.assertRedirects(response, reverse('dashboard'))
+        return User.objects.get(email='rater@example.com')
+
+    def test_password_required_and_case_insensitive_email(self):
+        user = self.register()
+        self.assertTrue(user.check_password(self.password))
+        self.assertNotEqual(user.password, self.password)
+        self.client.logout()
+        self.code.is_active = False
+        self.code.save()
+        for data in ({'email': user.email, 'password': 'wrong'},
+                     {'username': user.username, 'access_code': 'invite'},
+                     {'email': 'unknown@example.com', 'password': self.password}):
+            self.assertEqual(self.client.post(reverse('login'), data).status_code, 200)
+            self.assertNotIn('_auth_user_id', self.client.session)
+        response = self.client.post(reverse('login'), {'email': 'RATER@EXAMPLE.COM', 'password': self.password})
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
+
+    def test_duplicate_email_cannot_claim_or_replace_account(self):
+        user = self.register()
+        self.client.logout()
+        self.payload['email'] = 'RATER@example.com'
+        response = self.client.post(reverse('register'), self.payload)
+        self.assertContains(response, 'An account with this email already exists.')
+        self.assertEqual(User.objects.count(), 1)
+        self.assertNotIn('_auth_user_id', self.client.session)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(self.password))
+
+    def test_reject_invalid_registration(self):
+        for field, value in [('access_code', ''), ('access_code', 'wrong'),
+                             ('email', 'invalid'), ('password_confirm', 'different'),
+                             ('password', '123')]:
+            with self.subTest(field=field, value=value):
+                response = self.client.post(reverse('register'), {**self.payload, field: value})
+                self.assertEqual(response.status_code, 200)
+                self.assertFalse(User.objects.exists())
+        self.code.is_active = False
+        self.code.save()
+        self.client.post(reverse('register'), self.payload)
+        self.assertFalse(User.objects.exists())
+
+    def test_inactive_account_cannot_login(self):
+        user = self.register()
+        self.client.logout()
+        user.is_active = False
+        user.save()
+        self.client.post(reverse('login'), {'email': user.email, 'password': self.password})
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_legacy_username_cannot_be_claimed(self):
+        old = User.objects.create_user('rater@example.com')
+        new = self.register()
+        self.assertNotEqual(old.pk, new.pk)
+        old.refresh_from_db()
+        self.assertFalse(old.has_usable_password())
+
+    def test_registration_and_login_links(self):
+        self.assertContains(self.client.get(reverse('login')), reverse('register'))
+        self.assertContains(self.client.get(reverse('register')), 'Confirm password')
+
+
+class PasswordRecoveryTests(TestCase):
+    def setUp(self):
+        from annotator.models import EmailAccount
+        self.user = User.objects.create_user('recovery-user', email='recovery@example.com', password='Old-Password-719!')
+        EmailAccount.objects.create(user=self.user, email=self.user.email)
+
+    def test_reset_link_changes_password_and_cannot_be_reused(self):
+        import re
+        from django.core import mail
+        from django.test import override_settings
+        with override_settings(MAILERS={'default': {'BACKEND': 'django.core.mail.backends.locmem.EmailBackend'}}):
+            response = self.client.post(reverse('password_reset'), {'email': 'RECOVERY@example.com'})
+            self.assertRedirects(response, reverse('password_reset_done'))
+            self.assertEqual(len(mail.outbox), 1)
+            self.assertEqual(mail.outbox[0].to, [self.user.email])
+            link = re.search(r'http://testserver(/reset/\S+)', mail.outbox[0].body).group(1)
+            response = self.client.get(link)
+            confirm_url = response.url
+            self.assertContains(self.client.get(confirm_url), 'Choose a new password')
+            response = self.client.post(confirm_url, {'new_password1': 'New-Password-829!', 'new_password2': 'New-Password-829!'})
+            self.assertRedirects(response, reverse('password_reset_complete'))
+            self.user.refresh_from_db()
+            self.assertTrue(self.user.check_password('New-Password-829!'))
+            self.assertFalse(self.user.check_password('Old-Password-719!'))
+            self.assertContains(self.client.get(link), 'Invalid or expired link')
+            self.assertRedirects(self.client.post(reverse('login'), {'email': self.user.email, 'password': 'New-Password-829!'}), reverse('dashboard'))
+
+    def test_unknown_inactive_and_legacy_accounts_do_not_receive_email(self):
+        from django.core import mail
+        from django.test import override_settings
+        User.objects.create_user('legacy-recovery', email='legacy@example.com', password='Old-Password-719!')
+        self.user.is_active = False
+        self.user.save()
+        with override_settings(MAILERS={'default': {'BACKEND': 'django.core.mail.backends.locmem.EmailBackend'}}):
+            for email in ['missing@example.com', 'legacy@example.com', self.user.email]:
+                response = self.client.post(reverse('password_reset'), {'email': email})
+                self.assertRedirects(response, reverse('password_reset_done'))
+            self.assertEqual(len(mail.outbox), 0)
+
+    def test_expired_link_is_rejected(self):
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        with patch.object(default_token_generator, '_now', return_value=datetime.now() - timedelta(hours=2)):
+            token = default_token_generator.make_token(self.user)
+        url = reverse('password_reset_confirm', args=[urlsafe_base64_encode(force_bytes(self.user.pk)), token])
+        self.assertContains(self.client.get(url), 'Invalid or expired link')
+
+
+class CSVDeletionTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_superuser('csv-admin', password='Admin-Password-719!')
+        self.annotator = User.objects.create_user('csv-delete')
+        self.rating = EvaluationRating.objects.create(
+            annotator=self.annotator, category='C1', step='2step', example_id=0,
+            eval_type='t2i', eval_target='0', dimension='object_entity', score='6')
+        self.csv = AnnotatorResultCSV.objects.create(annotator=self.annotator, content='example,6', row_count=1)
+
+    def test_admin_can_delete_csv_without_deleting_ratings(self):
+        self.client.force_login(self.owner)
+        url = reverse('admin:annotator_annotatorresultcsv_delete', args=[self.csv.pk])
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(url, {'post': 'yes'})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(AnnotatorResultCSV.objects.exists())
+        self.assertTrue(EvaluationRating.objects.filter(pk=self.rating.pk).exists())
+
+    def test_bulk_delete_and_permissions(self):
+        from django.contrib.auth.models import Permission
+        limited = User.objects.create_user('csv-viewer', is_staff=True)
+        limited.user_permissions.add(Permission.objects.get(codename='view_annotatorresultcsv'))
+        self.client.force_login(limited)
+        delete_url = reverse('admin:annotator_annotatorresultcsv_delete', args=[self.csv.pk])
+        self.assertEqual(self.client.post(delete_url, {'post': 'yes'}).status_code, 403)
+        self.assertTrue(AnnotatorResultCSV.objects.exists())
+        self.client.force_login(self.owner)
+        response = self.client.post(reverse('admin:annotator_annotatorresultcsv_changelist'), {
+            'action': 'delete_selected', '_selected_action': [str(self.csv.pk)], 'post': 'yes'})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(AnnotatorResultCSV.objects.exists())
+
+
+class RegistrationRaceTests(TestCase):
+    def test_database_rejects_duplicate_even_after_both_forms_validate(self):
+        from django.db import IntegrityError
+        from annotator.forms import RegistrationForm
+        from annotator.models import EmailAccount
+        AccessCode.objects.create(code='race-code')
+        payload = {'email': 'race@example.com', 'password': 'Strong-Race-Password-719!',
+                   'password_confirm': 'Strong-Race-Password-719!', 'access_code': 'race-code'}
+        first, second = RegistrationForm(payload), RegistrationForm(payload)
+        self.assertTrue(first.is_valid())
+        self.assertTrue(second.is_valid())
+        first.save()
+        with self.assertRaises(IntegrityError):
+            second.save()
+        self.assertEqual(EmailAccount.objects.count(), 1)
+        self.assertEqual(User.objects.count(), 1)

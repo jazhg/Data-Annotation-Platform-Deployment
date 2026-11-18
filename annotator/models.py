@@ -3,6 +3,14 @@ from django.db import models
 from django.core.exceptions import ValidationError
 
 
+class EmailAccount(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='email_account')
+    email = models.EmailField(unique=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(email=models.functions.Lower('email')), name='email_account_lowercase')]
+
+
 class AccessCode(models.Model):
     code = models.CharField(max_length=50, unique=True)
     is_active = models.BooleanField(default=True)

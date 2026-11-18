@@ -172,6 +172,19 @@ MAILERS = {
     },
 }
 
+if not DEBUG:
+    MAILERS['default']['OPTIONS'] = {
+        'host': os.environ.get('EMAIL_HOST', 'localhost'),
+        'port': int(os.environ.get('EMAIL_PORT', '587')),
+        'username': os.environ.get('EMAIL_HOST_USER', ''),
+        'password': os.environ.get('EMAIL_HOST_PASSWORD', ''),
+        'use_tls': os.environ.get('EMAIL_USE_TLS', '1') == '1',
+        'use_ssl': os.environ.get('EMAIL_USE_SSL', '0') == '1',
+        'timeout': 15,
+    }
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+PASSWORD_RESET_TIMEOUT = 3600
+
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

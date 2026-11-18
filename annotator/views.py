@@ -7,9 +7,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.http import FileResponse, Http404, HttpResponseBadRequest
 from django.shortcuts import redirect, render
-from django.db import transaction
-from annotator.forms import AnnotatorEntryForm
-from annotator.models import EvaluationRating
+from django.db import IntegrityError, transaction
+from annotator.forms import EmailLoginForm, RegistrationForm
+from annotator.models import AccessCode, EvaluationRating
 from annotator.csv_results import refresh_annotator_csv
 from annotator.rubrics import expected_rating_keys, rubric_sections
 
@@ -32,29 +32,37 @@ def image_relative_path(raw_path):
 
 
 def entry_view(request):
-    """Authenticate annotators using a username and active shared access code."""
+    """Authenticate an existing email account with its own password."""
     if request.user.is_authenticated:
         return redirect('/admin/' if request.user.is_staff else 'dashboard')
 
     if request.method == 'POST':
-        form = AnnotatorEntryForm(request.POST)
+        form = EmailLoginForm(request.POST, request=request)
         if form.is_valid():
-            username = form.cleaned_data['username']
-            user, created = User.objects.get_or_create(username=username)
-
-            if created:
-                user.set_unusable_password()
-                user.save()
-            elif user.has_usable_password() or user.is_staff or user.is_superuser or not user.is_active:
-                form.add_error('username', "This username belongs to an admin account. Use Admin Login.")
-                return render(request, 'login.html', {'form': form})
-
-            login(request, user)
+            login(request, form.user)
             return redirect('dashboard')
     else:
-        form = AnnotatorEntryForm()
+        form = EmailLoginForm(request=request)
 
     return render(request, 'login.html', {'form': form})
+
+
+def register_view(request):
+    """Create an independent account only with a valid invitation code."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+    form = RegistrationForm(request.POST if request.method == 'POST' else None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            user = form.save()
+        except IntegrityError:
+            form.add_error('email', 'An account with this email already exists.')
+        except AccessCode.DoesNotExist:
+            form.add_error('access_code', 'Invalid or inactive access code.')
+        else:
+            login(request, user)
+            return redirect('dashboard')
+    return render(request, 'register.html', {'form': form})
 
 
 @login_required
